@@ -76,7 +76,7 @@ Nhấp chuột phải vào MiniSupermarket.WinForms chọn Debug -> Start new in
 Trải nghiệm thao tác Thêm/Sửa/Xóa Khách hàng và Nhóm hàng. Dữ liệu sẽ đồng bộ trực tiếp với SQL Server.
 
 👨‍💻 5. Tác giả
-Họ tên sinh viên: Huynh Nhat Lam
+Họ tên sinh viên: Huỳnh Nhật Lâm
 
 Mã sinh viên: 2124110334
 
