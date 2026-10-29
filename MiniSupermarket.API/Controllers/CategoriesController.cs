@@ -1,11 +1,14 @@
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using MiniSupermarket.API.Constants;
 using MiniSupermarket.API.Data;
 using MiniSupermarket.API.DTOs;
 using MiniSupermarket.API.Models;
 
 namespace MiniSupermarket.API.Controllers;
 
+[Authorize]
 public class CategoriesController : ApiControllerBase
 {
     private readonly SupermarketDbContext _db;
@@ -47,6 +50,7 @@ public class CategoriesController : ApiControllerBase
 
     // POST: /api/categories
     [HttpPost]
+    [Authorize(Roles = AppRoles.Admin)]
     public async Task<IActionResult> Create([FromBody] CategoryRequest input)
     {
         var category = new Category { CategoryName = input.CategoryName.Trim(), Description = input.Description };
@@ -59,6 +63,7 @@ public class CategoriesController : ApiControllerBase
 
     // PUT: /api/categories/1
     [HttpPut("{id}")]
+    [Authorize(Roles = AppRoles.Admin)]
     public async Task<IActionResult> Update(int id, [FromBody] CategoryRequest input)
     {
         var category = await _db.Categories.FindAsync(id);
@@ -73,6 +78,7 @@ public class CategoriesController : ApiControllerBase
 
     // DELETE: /api/categories/1
     [HttpDelete("{id}")]
+    [Authorize(Roles = AppRoles.Admin)]
     public async Task<IActionResult> Delete(int id)
     {
         var category = await _db.Categories.FindAsync(id);

@@ -1,12 +1,16 @@
 using System.Linq.Expressions;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using MiniSupermarket.API.Constants;
 using MiniSupermarket.API.Data;
+using MiniSupermarket.API.Data.AdoNet;
 using MiniSupermarket.API.DTOs;
 using MiniSupermarket.API.Models;
 
 namespace MiniSupermarket.API.Controllers;
 
+[Authorize]
 public class ProductsController : ApiControllerBase
 {
     private const int DefaultPageSize = 5;
@@ -25,8 +29,13 @@ public class ProductsController : ApiControllerBase
     };
 
     private readonly SupermarketDbContext _db;
+    private readonly ProductAdoRepository _productsAdo;
 
-    public ProductsController(SupermarketDbContext db) => _db = db;
+    public ProductsController(SupermarketDbContext db, ProductAdoRepository productsAdo)
+    {
+        _db = db;
+        _productsAdo = productsAdo;
+    }
 
     // GET: api/products/paged?keyword=sua&categoryId=1&pageNumber=1&pageSize=5
     [HttpGet("paged")]
@@ -76,21 +85,17 @@ public class ProductsController : ApiControllerBase
         return product == null ? NotFoundMessage("Không tìm thấy sản phẩm!") : Ok(product);
     }
 
-    // GET: api/products/barcode/893...
+    // GET: api/products/barcode/893... (ADO.NET: tra cứu nhanh khi quét mã vạch ở POS)
     [HttpGet("barcode/{barcode}")]
     public async Task<IActionResult> GetByBarcode(string barcode)
     {
-        var code = barcode.Trim();
-        var product = await _db.Products.AsNoTracking()
-            .Where(p => p.Barcode == code)
-            .Select(ToItemDto)
-            .FirstOrDefaultAsync();
-
+        var product = await _productsAdo.GetByBarcodeAsync(barcode.Trim());
         return product == null ? NotFoundMessage("Không tìm thấy sản phẩm!") : Ok(product);
     }
 
     // POST: api/products
     [HttpPost]
+    [Authorize(Roles = AppRoles.AdminOrWarehouse)]
     public async Task<IActionResult> Create([FromBody] ProductInput input)
     {
         var error = await ValidateAsync(input, excludeProductId: 0);
@@ -122,6 +127,7 @@ public class ProductsController : ApiControllerBase
 
     // PUT: api/products/1
     [HttpPut("{id:int}")]
+    [Authorize(Roles = AppRoles.AdminOrWarehouse)]
     public async Task<IActionResult> Update(int id, [FromBody] ProductInput input)
     {
         var product = await _db.Products.FindAsync(id);
@@ -146,6 +152,7 @@ public class ProductsController : ApiControllerBase
 
     // DELETE: api/products/1
     [HttpDelete("{id:int}")]
+    [Authorize(Roles = AppRoles.AdminOrWarehouse)]
     public async Task<IActionResult> Delete(int id)
     {
         var product = await _db.Products.FindAsync(id);

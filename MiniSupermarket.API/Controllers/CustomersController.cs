@@ -1,11 +1,14 @@
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using MiniSupermarket.API.Constants;
 using MiniSupermarket.API.Data;
 using MiniSupermarket.API.DTOs;
 using MiniSupermarket.API.Models;
 
 namespace MiniSupermarket.API.Controllers;
 
+[Authorize(Roles = AppRoles.AdminOrCashier)]
 public class CustomersController : ApiControllerBase
 {
     private readonly SupermarketDbContext _db;
@@ -104,6 +107,7 @@ public class CustomersController : ApiControllerBase
 
     // DELETE: /api/customers/1 (chỉ Admin)
     [HttpDelete("{id}")]
+    [Authorize(Roles = AppRoles.Admin)]
     public async Task<IActionResult> Delete(int id)
     {
         var customer = await _db.Customers.FindAsync(id);

@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using MiniSupermarket.API.Data;
@@ -6,6 +7,7 @@ using MiniSupermarket.API.Models;
 
 namespace MiniSupermarket.API.Controllers;
 
+[Authorize]
 public class BrandsController : ApiControllerBase
 {
     private readonly SupermarketDbContext _db;
