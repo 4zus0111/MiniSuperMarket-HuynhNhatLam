@@ -9,6 +9,8 @@ namespace MiniSupermarket.API.Controllers;
 
 public class ProductsController : ApiControllerBase
 {
+    private const int DefaultPageSize = 5;
+    private const int MaxPageSize = 50;
 
     private static readonly Expression<Func<Product, ProductItemDto>> ToItemDto = p => new ProductItemDto
     {
@@ -26,11 +28,35 @@ public class ProductsController : ApiControllerBase
 
     public ProductsController(SupermarketDbContext db) => _db = db;
 
-    // GET: api/products
-    [HttpGet]
-    public async Task<IActionResult> GetAll()
+    // GET: api/products/paged?keyword=sua&categoryId=1&pageNumber=1&pageSize=5
+    [HttpGet("paged")]
+    public async Task<IActionResult> GetPaged(
+        [FromQuery] string? keyword,
+        [FromQuery] int? categoryId,
+        [FromQuery] int pageNumber = 1,
+        [FromQuery] int pageSize = DefaultPageSize)
     {
-        var items = await _db.Products
+        if (pageNumber < 1) pageNumber = 1;
+        if (pageSize < 1 || pageSize > MaxPageSize) pageSize = DefaultPageSize;
+
+        var query = Filter(keyword, categoryId);
+        var totalItems = await query.CountAsync();
+
+        var items = await query
+            .OrderBy(p => p.ProductId)
+            .Skip((pageNumber - 1) * pageSize)
+            .Take(pageSize)
+            .Select(ToItemDto)
+            .ToListAsync();
+
+        return Ok(PagedResult<ProductItemDto>.Create(items, totalItems, pageNumber, pageSize));
+    }
+
+    // GET: api/products?keyword=sua&categoryId=1
+    [HttpGet]
+    public async Task<IActionResult> GetAll([FromQuery] string? keyword, [FromQuery] int? categoryId)
+    {
+        var items = await Filter(keyword, categoryId)
             .OrderBy(p => p.ProductId)
             .Select(ToItemDto)
             .ToListAsync();
@@ -42,7 +68,7 @@ public class ProductsController : ApiControllerBase
     [HttpGet("{id:int}")]
     public async Task<IActionResult> GetById(int id)
     {
-        var product = await _db.Products
+        var product = await _db.Products.AsNoTracking()
             .Where(p => p.ProductId == id)
             .Select(ToItemDto)
             .FirstOrDefaultAsync();
@@ -55,7 +81,7 @@ public class ProductsController : ApiControllerBase
     public async Task<IActionResult> GetByBarcode(string barcode)
     {
         var code = barcode.Trim();
-        var product = await _db.Products
+        var product = await _db.Products.AsNoTracking()
             .Where(p => p.Barcode == code)
             .Select(ToItemDto)
             .FirstOrDefaultAsync();
@@ -86,7 +112,7 @@ public class ProductsController : ApiControllerBase
         _db.Products.Add(product);
         await _db.SaveChangesAsync();
 
-        var created = await _db.Products
+        var created = await _db.Products.AsNoTracking()
             .Where(p => p.ProductId == product.ProductId)
             .Select(ToItemDto)
             .FirstAsync();
@@ -132,6 +158,22 @@ public class ProductsController : ApiControllerBase
         await _db.SaveChangesAsync();
 
         return NoContent();
+    }
+
+    private IQueryable<Product> Filter(string? keyword, int? categoryId)
+    {
+        var query = _db.Products.AsNoTracking();
+
+        if (!string.IsNullOrWhiteSpace(keyword))
+        {
+            var search = keyword.Trim();
+            query = query.Where(p => p.ProductName.Contains(search) || p.Barcode.Contains(search));
+        }
+
+        if (categoryId > 0)
+            query = query.Where(p => p.CategoryId == categoryId);
+
+        return query;
     }
 
     /// <summary>Trả về thông báo lỗi, hoặc null nếu dữ liệu hợp lệ.</summary>

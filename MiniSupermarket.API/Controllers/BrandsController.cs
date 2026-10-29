@@ -15,18 +15,34 @@ public class BrandsController : ApiControllerBase
     // GET: /api/brands
     [HttpGet]
     public async Task<IActionResult> GetAll() =>
-        Ok(await _db.Brands.Select(BrandDto.Projection).ToListAsync());
+        Ok(await _db.Brands.AsNoTracking().Select(BrandDto.Projection).ToListAsync());
 
     // GET: /api/brands/1
     [HttpGet("{id}")]
     public async Task<IActionResult> GetById(int id)
     {
-        var brand = await _db.Brands
+        var brand = await _db.Brands.AsNoTracking()
             .Where(b => b.BrandId == id)
             .Select(BrandDto.Projection)
             .FirstOrDefaultAsync();
 
         return brand == null ? NotFoundMessage("Không tìm thấy thương hiệu!") : Ok(brand);
+    }
+
+    // GET: /api/brands/search?keyword=abc
+    [HttpGet("search")]
+    public async Task<IActionResult> Search([FromQuery] string keyword)
+    {
+        if (string.IsNullOrWhiteSpace(keyword))
+            return BadRequestMessage("Vui lòng nhập từ khóa!");
+
+        var result = await _db.Brands
+            .AsNoTracking()
+            .Where(b => b.BrandName.Contains(keyword))
+            .Select(BrandDto.Projection)
+            .ToListAsync();
+
+        return Ok(result);
     }
 
     // POST: /api/brands

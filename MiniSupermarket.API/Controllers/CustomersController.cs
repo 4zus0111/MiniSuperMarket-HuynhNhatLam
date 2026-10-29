@@ -15,18 +15,46 @@ public class CustomersController : ApiControllerBase
     // GET: /api/customers
     [HttpGet]
     public async Task<IActionResult> GetAll() =>
-        Ok(await _db.Customers.Select(CustomerDto.Projection).ToListAsync());
+        Ok(await _db.Customers.AsNoTracking().Select(CustomerDto.Projection).ToListAsync());
 
     // GET: /api/customers/1
     [HttpGet("{id}")]
     public async Task<IActionResult> GetById(int id)
     {
-        var customer = await _db.Customers
+        var customer = await _db.Customers.AsNoTracking()
             .Where(c => c.CustomerId == id)
             .Select(CustomerDto.Projection)
             .FirstOrDefaultAsync();
 
         return customer == null ? NotFoundMessage("Không tìm thấy khách hàng!") : Ok(customer);
+    }
+
+    // GET: /api/customers/phone/0901122334 (POS tra cứu khách hàng thân thiết)
+    [HttpGet("phone/{phone}")]
+    public async Task<IActionResult> GetByPhone(string phone)
+    {
+        var customer = await _db.Customers.AsNoTracking()
+            .Where(c => c.PhoneNumber == phone.Trim())
+            .Select(CustomerDto.Projection)
+            .FirstOrDefaultAsync();
+
+        return customer == null ? NotFoundMessage("Không tìm thấy khách hàng!") : Ok(customer);
+    }
+
+    // GET: /api/customers/search?keyword=Nguyen (tìm theo tên hoặc số điện thoại)
+    [HttpGet("search")]
+    public async Task<IActionResult> Search([FromQuery] string keyword)
+    {
+        if (string.IsNullOrWhiteSpace(keyword))
+            return BadRequestMessage("Vui lòng nhập từ khóa tìm kiếm!");
+
+        var customers = await _db.Customers
+            .AsNoTracking()
+            .Where(c => c.CustomerName.Contains(keyword) || c.PhoneNumber.Contains(keyword))
+            .Select(CustomerDto.Projection)
+            .ToListAsync();
+
+        return Ok(customers);
     }
 
     // POST: /api/customers

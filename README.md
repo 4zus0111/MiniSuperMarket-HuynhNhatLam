@@ -1,6 +1,6 @@
-# MiniSupermarket – Buổi 2 – Entity, DbContext và Migrations (EF Core + MySQL)
+# MiniSupermarket – Buổi 3 – LINQ, phân trang và tối ưu truy vấn
 
-Nội dung buổi học (mục 18–23 của đề bài): 8 entity (`User`, `Role`, `Category`, `Brand`, `Product`, `Customer`, `Order`, `OrderItem`); `DbContext` và khóa ngoại (Category–Product, Order–OrderItem...); validation (`[Required]`, giá > 0, độ dài chuỗi); `Add-Migration` / `Update-Database`; dữ liệu mẫu (15 sản phẩm, 15 nhóm hàng); CRUD bằng EF Core cho nhóm hàng, thương hiệu, sản phẩm, khách hàng.
+Nội dung buổi học (mục 24–27 của đề bài): Tìm kiếm sản phẩm bằng `Contains`, lọc theo nhóm hàng, phân trang phía server (`Skip/Take`), lấy tên nhóm hàng cùng sản phẩm bằng projection `Select`, `AsNoTracking()` cho truy vấn chỉ đọc; tìm kiếm nhóm hàng, thương hiệu, khách hàng.
 
 ## Chạy thử
 

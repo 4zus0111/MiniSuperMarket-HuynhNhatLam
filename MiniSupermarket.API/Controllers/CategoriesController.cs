@@ -15,18 +15,34 @@ public class CategoriesController : ApiControllerBase
     // GET: /api/categories
     [HttpGet]
     public async Task<IActionResult> GetAll() =>
-        Ok(await _db.Categories.Select(CategoryDto.Projection).ToListAsync());
+        Ok(await _db.Categories.AsNoTracking().Select(CategoryDto.Projection).ToListAsync());
 
     // GET: /api/categories/1
     [HttpGet("{id}")]
     public async Task<IActionResult> GetById(int id)
     {
-        var category = await _db.Categories
+        var category = await _db.Categories.AsNoTracking()
             .Where(c => c.CategoryId == id)
             .Select(CategoryDto.Projection)
             .FirstOrDefaultAsync();
 
         return category == null ? NotFoundMessage("Không tìm thấy nhóm hàng trong CSDL!") : Ok(category);
+    }
+
+    // GET: /api/categories/search?keyword=bánh
+    [HttpGet("search")]
+    public async Task<IActionResult> Search([FromQuery] string keyword)
+    {
+        if (string.IsNullOrWhiteSpace(keyword))
+            return BadRequestMessage("Vui lòng nhập từ khóa tìm kiếm!");
+
+        var result = await _db.Categories
+            .AsNoTracking()
+            .Where(c => c.CategoryName.Contains(keyword))
+            .Select(CategoryDto.Projection)
+            .ToListAsync();
+
+        return Ok(result);
     }
 
     // POST: /api/categories
