@@ -1,34 +1,65 @@
+using System.Linq.Expressions;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
+using MiniSupermarket.API.Data;
 using MiniSupermarket.API.DTOs;
+using MiniSupermarket.API.Models;
 
 namespace MiniSupermarket.API.Controllers;
 
-/// <summary>Dữ liệu lưu tạm trong bộ nhớ; buổi 2 sẽ chuyển sang MySQL bằng EF Core.</summary>
 public class ProductsController : ApiControllerBase
 {
-    private static readonly List<ProductItemDto> Products = new()
+
+    private static readonly Expression<Func<Product, ProductItemDto>> ToItemDto = p => new ProductItemDto
     {
-        new() { ProductId = 1, Barcode = "8934001000011", ProductName = "Sữa tươi 1L", Price = 32000, StockQuantity = 40, CategoryId = 1, CategoryName = "Sữa" },
-        new() { ProductId = 2, Barcode = "8934001000028", ProductName = "Bánh quy bơ", Price = 18000, StockQuantity = 60, CategoryId = 2, CategoryName = "Bánh kẹo" },
-        new() { ProductId = 3, Barcode = "8934001000035", ProductName = "Nước suối 500ml", Price = 6000, StockQuantity = 120, CategoryId = 3, CategoryName = "Đồ uống" }
+        ProductId = p.ProductId,
+        Barcode = p.Barcode,
+        ProductName = p.ProductName,
+        Price = p.Price,
+        StockQuantity = p.StockQuantity,
+        CategoryId = p.CategoryId,
+        CategoryName = p.Category != null ? p.Category.CategoryName : string.Empty,
+        BrandId = p.BrandId
     };
 
-    private static int _nextId = 4;
+    private readonly SupermarketDbContext _db;
+
+    public ProductsController(SupermarketDbContext db) => _db = db;
 
     // GET: api/products
     [HttpGet]
     public async Task<IActionResult> GetAll()
     {
-        await Task.CompletedTask;
-        return Ok(Products);
+        var items = await _db.Products
+            .OrderBy(p => p.ProductId)
+            .Select(ToItemDto)
+            .ToListAsync();
+
+        return Ok(items);
     }
 
     // GET: api/products/1
     [HttpGet("{id:int}")]
     public async Task<IActionResult> GetById(int id)
     {
-        await Task.CompletedTask;
-        var product = Products.FirstOrDefault(p => p.ProductId == id);
+        var product = await _db.Products
+            .Where(p => p.ProductId == id)
+            .Select(ToItemDto)
+            .FirstOrDefaultAsync();
+
+        return product == null ? NotFoundMessage("Không tìm thấy sản phẩm!") : Ok(product);
+    }
+
+    // GET: api/products/barcode/893...
+    [HttpGet("barcode/{barcode}")]
+    public async Task<IActionResult> GetByBarcode(string barcode)
+    {
+        var code = barcode.Trim();
+        var product = await _db.Products
+            .Where(p => p.Barcode == code)
+            .Select(ToItemDto)
+            .FirstOrDefaultAsync();
+
         return product == null ? NotFoundMessage("Không tìm thấy sản phẩm!") : Ok(product);
     }
 
@@ -36,31 +67,54 @@ public class ProductsController : ApiControllerBase
     [HttpPost]
     public async Task<IActionResult> Create([FromBody] ProductInput input)
     {
-        await Task.CompletedTask;
-
-        var error = Validate(input, excludeProductId: 0, out var category);
+        var error = await ValidateAsync(input, excludeProductId: 0);
         if (error != null) return BadRequestMessage(error);
 
-        var product = new ProductItemDto { ProductId = _nextId++ };
-        Apply(product, input, category!);
-        Products.Add(product);
+        var brandId = await ResolveBrandIdAsync(input.BrandId);
+        if (brandId <= 0) return BadRequestMessage("Không có thương hiệu hợp lệ!");
 
-        return CreatedAtAction(nameof(GetById), new { id = product.ProductId }, product);
+        var product = new Product
+        {
+            Barcode = input.Barcode.Trim(),
+            ProductName = input.ProductName.Trim(),
+            Price = input.Price,
+            StockQuantity = input.StockQuantity,
+            CategoryId = input.CategoryId,
+            BrandId = brandId
+        };
+
+        _db.Products.Add(product);
+        await _db.SaveChangesAsync();
+
+        var created = await _db.Products
+            .Where(p => p.ProductId == product.ProductId)
+            .Select(ToItemDto)
+            .FirstAsync();
+
+        return CreatedAtAction(nameof(GetById), new { id = product.ProductId }, created);
     }
 
     // PUT: api/products/1
     [HttpPut("{id:int}")]
     public async Task<IActionResult> Update(int id, [FromBody] ProductInput input)
     {
-        await Task.CompletedTask;
-
-        var product = Products.FirstOrDefault(p => p.ProductId == id);
+        var product = await _db.Products.FindAsync(id);
         if (product == null) return NotFoundMessage("Không tìm thấy sản phẩm!");
 
-        var error = Validate(input, excludeProductId: id, out var category);
+        var error = await ValidateAsync(input, excludeProductId: id);
         if (error != null) return BadRequestMessage(error);
 
-        Apply(product, input, category!);
+        product.Barcode = input.Barcode.Trim();
+        product.ProductName = input.ProductName.Trim();
+        product.Price = input.Price;
+        product.StockQuantity = input.StockQuantity;
+        product.CategoryId = input.CategoryId;
+
+        if (input.BrandId > 0 && await _db.Brands.AnyAsync(b => b.BrandId == input.BrandId))
+            product.BrandId = input.BrandId;
+
+        await _db.SaveChangesAsync();
+
         return NoContent();
     }
 
@@ -68,32 +122,40 @@ public class ProductsController : ApiControllerBase
     [HttpDelete("{id:int}")]
     public async Task<IActionResult> Delete(int id)
     {
-        await Task.CompletedTask;
-        var product = Products.FirstOrDefault(p => p.ProductId == id);
+        var product = await _db.Products.FindAsync(id);
         if (product == null) return NotFoundMessage("Không tìm thấy sản phẩm!");
 
-        Products.Remove(product);
+        if (await _db.OrderItems.AnyAsync(o => o.ProductId == id))
+            return BadRequestMessage("Sản phẩm đã có trong hóa đơn, không thể xóa!");
+
+        _db.Products.Remove(product);
+        await _db.SaveChangesAsync();
+
         return NoContent();
     }
 
-    private static string? Validate(ProductInput input, int excludeProductId, out CategoryDto? category)
+    /// <summary>Trả về thông báo lỗi, hoặc null nếu dữ liệu hợp lệ.</summary>
+    private async Task<string?> ValidateAsync(ProductInput input, int excludeProductId)
     {
-        category = CategoriesController.Categories.FirstOrDefault(c => c.CategoryId == input.CategoryId);
-        if (category == null) return "Nhóm hàng không hợp lệ!";
-
         var barcode = input.Barcode.Trim();
-        return Products.Any(p => p.Barcode == barcode && p.ProductId != excludeProductId)
-            ? "Mã vạch này đã tồn tại!"
-            : null;
+        if (await _db.Products.AnyAsync(p => p.Barcode == barcode && p.ProductId != excludeProductId))
+            return "Mã vạch này đã tồn tại!";
+
+        if (!await _db.Categories.AnyAsync(c => c.CategoryId == input.CategoryId))
+            return "Nhóm hàng không hợp lệ!";
+
+        return null;
     }
 
-    private static void Apply(ProductItemDto product, ProductInput input, CategoryDto category)
+    /// <summary>Dùng thương hiệu được chọn; nếu không hợp lệ thì lấy thương hiệu đầu tiên (0 nếu chưa có).</summary>
+    private async Task<int> ResolveBrandIdAsync(int requestedBrandId)
     {
-        product.Barcode = input.Barcode.Trim();
-        product.ProductName = input.ProductName.Trim();
-        product.Price = input.Price;
-        product.StockQuantity = input.StockQuantity;
-        product.CategoryId = category.CategoryId;
-        product.CategoryName = category.CategoryName;
+        if (requestedBrandId > 0 && await _db.Brands.AnyAsync(b => b.BrandId == requestedBrandId))
+            return requestedBrandId;
+
+        return await _db.Brands
+            .OrderBy(b => b.BrandId)
+            .Select(b => b.BrandId)
+            .FirstOrDefaultAsync();
     }
 }

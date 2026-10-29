@@ -1,0 +1,89 @@
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
+using MiniSupermarket.API.Data;
+using MiniSupermarket.API.DTOs;
+using MiniSupermarket.API.Models;
+
+namespace MiniSupermarket.API.Controllers;
+
+public class CustomersController : ApiControllerBase
+{
+    private readonly SupermarketDbContext _db;
+
+    public CustomersController(SupermarketDbContext db) => _db = db;
+
+    // GET: /api/customers
+    [HttpGet]
+    public async Task<IActionResult> GetAll() =>
+        Ok(await _db.Customers.Select(CustomerDto.Projection).ToListAsync());
+
+    // GET: /api/customers/1
+    [HttpGet("{id}")]
+    public async Task<IActionResult> GetById(int id)
+    {
+        var customer = await _db.Customers
+            .Where(c => c.CustomerId == id)
+            .Select(CustomerDto.Projection)
+            .FirstOrDefaultAsync();
+
+        return customer == null ? NotFoundMessage("Không tìm thấy khách hàng!") : Ok(customer);
+    }
+
+    // POST: /api/customers
+    [HttpPost]
+    public async Task<IActionResult> Create([FromBody] CustomerRequest input)
+    {
+        var phone = input.PhoneNumber.Trim();
+        if (await _db.Customers.AnyAsync(c => c.PhoneNumber == phone))
+            return ConflictMessage("Số điện thoại đã được đăng ký!");
+
+        var customer = new Customer
+        {
+            CustomerName = input.CustomerName.Trim(),
+            PhoneNumber = phone,
+            Address = input.Address,
+            RewardPoints = 0,
+            MembershipRank = "Chuẩn",
+            CreatedAt = DateTime.Now
+        };
+
+        _db.Customers.Add(customer);
+        await _db.SaveChangesAsync();
+
+        return CreatedAtAction(nameof(GetById), new { id = customer.CustomerId }, CustomerDto.From(customer));
+    }
+
+    // PUT: /api/customers/1
+    [HttpPut("{id}")]
+    public async Task<IActionResult> Update(int id, [FromBody] CustomerRequest input)
+    {
+        var customer = await _db.Customers.FindAsync(id);
+        if (customer == null) return NotFoundMessage("Không tìm thấy khách hàng cần cập nhật!");
+
+        var phone = input.PhoneNumber.Trim();
+        if (await _db.Customers.AnyAsync(c => c.PhoneNumber == phone && c.CustomerId != id))
+            return ConflictMessage("Số điện thoại đã được sử dụng bởi khách hàng khác!");
+
+        customer.CustomerName = input.CustomerName.Trim();
+        customer.PhoneNumber = phone;
+        customer.Address = input.Address;
+        customer.MembershipRank = input.MembershipRank;
+        customer.RewardPoints = input.RewardPoints;
+        await _db.SaveChangesAsync();
+
+        return NoContent();
+    }
+
+    // DELETE: /api/customers/1 (chỉ Admin)
+    [HttpDelete("{id}")]
+    public async Task<IActionResult> Delete(int id)
+    {
+        var customer = await _db.Customers.FindAsync(id);
+        if (customer == null) return NotFoundMessage("Không tìm thấy khách hàng cần xóa!");
+
+        _db.Customers.Remove(customer);
+        await _db.SaveChangesAsync();
+
+        return NoContent();
+    }
+}
