@@ -15,6 +15,34 @@ public class ReportAdoRepository
             ?? throw new InvalidOperationException("Thiếu ConnectionStrings:DefaultConnection trong appsettings.json");
     }
 
+    /// <summary>sp_GetDailyRevenue: doanh thu từng ngày (GROUP BY CAST(CreatedAt AS DATE)); ngày không có đơn sẽ không có dòng.</summary>
+    public async Task<List<DailyRevenueDto>> GetDailyRevenueAsync(DateTime from, DateTime to)
+    {
+        await using var connection = new MySqlConnection(_connectionString);
+        await connection.OpenAsync();
+
+        await using var command = new MySqlCommand("sp_GetDailyRevenue", connection)
+        {
+            CommandType = CommandType.StoredProcedure
+        };
+        command.Parameters.AddWithValue("p_from", from.Date);
+        command.Parameters.AddWithValue("p_to", to.Date);
+
+        var result = new List<DailyRevenueDto>();
+        await using var reader = (MySqlDataReader)await command.ExecuteReaderAsync();
+        while (await reader.ReadAsync())
+        {
+            result.Add(new DailyRevenueDto
+            {
+                Date = reader.GetDateTime("RevenueDate"),
+                TotalOrders = Convert.ToInt32(reader["TotalOrders"]),
+                Revenue = Convert.ToDecimal(reader["Revenue"])
+            });
+        }
+
+        return result;
+    }
+
     /// <summary>sp_GetShiftRevenue: số đơn và doanh thu của một thu ngân trong khoảng thời gian (ca làm việc).</summary>
     public async Task<(int TotalOrders, decimal Revenue)> GetShiftRevenueAsync(int cashierId, DateTime from, DateTime to)
     {

@@ -8,4 +8,11 @@
     <ImplicitUsings>enable</ImplicitUsings>
   </PropertyGroup>
 
+  <ItemGroup>
+    <!-- Control Chart cho WinForms trên .NET (bản port của System.Windows.Forms.DataVisualization) -->
+    <PackageReference Include="System.Windows.Forms.DataVisualization" Version="1.0.0-prerelease.20110.1" />
+    <!-- Chart tham chiếu System.Data.SqlClient khi chạy nhưng gói biểu đồ không kéo theo gói này -->
+    <PackageReference Include="System.Data.SqlClient" Version="4.8.6" />
+  </ItemGroup>
+
 </Project>

@@ -11,8 +11,6 @@ namespace MiniSupermarket.API.Controllers;
 [Authorize]
 public class OrdersController : ApiControllerBase
 {
-    private const decimal AmountPerRewardPoint = 10000m;
-
     private readonly SupermarketDbContext _db;
 
     public OrdersController(SupermarketDbContext db) => _db = db;
@@ -36,7 +34,7 @@ public class OrdersController : ApiControllerBase
         var totalItems = await query.CountAsync();
         var orders = await query.Skip((currentPage - 1) * pageSize).Take(pageSize).ToListAsync();
 
-        return Ok(PagedResult<object>.Create(orders.Select(ToResponse).ToList(), totalItems, currentPage, pageSize));
+        return Ok(PagedResult<OrderResponseDto>.Create(orders.Select(ToResponse).ToList(), totalItems, currentPage, pageSize));
     }
 
     // GET: api/orders/1
@@ -73,7 +71,20 @@ public class OrdersController : ApiControllerBase
         if (!string.IsNullOrWhiteSpace(request.CustomerPhone))
         {
             var phone = request.CustomerPhone.Trim();
-            customer = await _db.Customers.FirstOrDefaultAsync(c => c.PhoneNumber == phone);
+            customer = await _db.Customers.AsNoTracking().FirstOrDefaultAsync(c => c.PhoneNumber == phone);
+        }
+
+        var redeemPoints = request.RedeemPoints;
+        if (redeemPoints < 0 || redeemPoints % LoyaltyRules.PointsPerRedemption != 0)
+            return BadRequestMessage($"Số điểm đổi phải là bội số của {LoyaltyRules.PointsPerRedemption}!");
+
+        if (redeemPoints > 0)
+        {
+            if (customer == null)
+                return BadRequestMessage("Cần nhập khách hàng thân thiết để đổi điểm!");
+
+            if (customer.RewardPoints < redeemPoints)
+                return BadRequestMessage($"Khách hàng chỉ có {customer.RewardPoints} điểm!");
         }
 
         // Gộp các dòng trùng sản phẩm để kiểm tra tồn kho đúng
@@ -111,16 +122,19 @@ public class OrdersController : ApiControllerBase
         }
 
         order.Subtotal = order.Items.Sum(i => i.LineTotal);
-        order.Discount = 0;
-        order.Total = order.Subtotal;
+        order.Discount = redeemPoints * LoyaltyRules.DiscountPerPoint;
+
+        if (order.Discount > order.Subtotal)
+            return BadRequestMessage("Giá trị giảm giá không được vượt quá tổng tiền hàng!");
+
+        order.Total = order.Subtotal - order.Discount;
 
         if (request.CashReceived < order.Total)
             return BadRequestMessage("Tiền khách đưa chưa đủ!");
 
-        if (customer != null)
-            customer.RewardPoints += RewardPointsFor(order.Total);
+        var earnedPoints = customer != null ? RewardPointsFor(order.Total) : 0;
 
-        // Trừ kho + lưu đơn + gán mã đơn trong một transaction: lỗi ở bước nào cũng rollback tất cả.
+        // Trừ kho + đổi/tích điểm + lưu đơn + gán mã đơn trong một transaction: lỗi ở bước nào cũng rollback tất cả.
         await using var transaction = await _db.Database.BeginTransactionAsync();
 
         foreach (var (productId, quantity) in lines)
@@ -140,6 +154,19 @@ public class OrdersController : ApiControllerBase
             }
         }
 
+        if (customer != null)
+        {
+            // Trừ điểm đổi và cộng điểm tích lũy trong cùng transaction; chỉ thực hiện khi còn đủ điểm
+            var customerId = customer.CustomerId;
+            var updated = await _db.Customers
+                .Where(c => c.CustomerId == customerId && c.RewardPoints >= redeemPoints)
+                .ExecuteUpdateAsync(s => s.SetProperty(
+                    c => c.RewardPoints, c => c.RewardPoints - redeemPoints + earnedPoints));
+
+            if (updated == 0)
+                return BadRequestMessage("Số điểm tích lũy không đủ để đổi!");
+        }
+
         _db.Orders.Add(order);
         await _db.SaveChangesAsync();
 
@@ -147,7 +174,17 @@ public class OrdersController : ApiControllerBase
         await _db.SaveChangesAsync();
         await transaction.CommitAsync();
 
-        return Ok(new { order.OrderId, order.OrderCode, order.Total, Change = request.CashReceived - order.Total });
+        return Ok(new CheckoutResponseDto
+        {
+            OrderId = order.OrderId,
+            OrderCode = order.OrderCode,
+            Subtotal = order.Subtotal,
+            Discount = order.Discount,
+            Total = order.Total,
+            Change = request.CashReceived - order.Total,
+            RewardPointsRedeemed = redeemPoints,
+            RewardPointsEarned = earnedPoints
+        });
     }
 
     // PUT: api/orders/1/status
@@ -202,7 +239,7 @@ public class OrdersController : ApiControllerBase
     private Task<Order?> LoadOrderWithItemsAsync(int id) =>
         _db.Orders.Include(o => o.Items).FirstOrDefaultAsync(o => o.OrderId == id);
 
-    /// <summary>Hoàn kho và trừ điểm khách hàng của một đơn (gọi trong transaction).</summary>
+    /// <summary>Hoàn kho, thu hồi điểm đã tích và trả lại điểm đã đổi của một đơn (gọi trong transaction).</summary>
     private async Task RestoreStockAndPointsAsync(Order order)
     {
         foreach (var item in order.Items)
@@ -217,10 +254,16 @@ public class OrdersController : ApiControllerBase
 
         var customer = await _db.Customers.FirstOrDefaultAsync(c => c.CustomerId == order.CustomerId);
         if (customer != null)
-            customer.RewardPoints = Math.Max(0, customer.RewardPoints - RewardPointsFor(order.Total));
+        {
+            var remaining = Math.Max(0, customer.RewardPoints - RewardPointsFor(order.Total));
+            customer.RewardPoints = remaining + RedeemedPointsFor(order);
+        }
     }
 
-    private static int RewardPointsFor(decimal total) => (int)(total / AmountPerRewardPoint);
+    private static int RewardPointsFor(decimal total) => (int)(total / LoyaltyRules.AmountPerRewardPoint);
+
+    /// <summary>Số điểm đã đổi suy ra từ giá trị giảm giá của đơn (mỗi điểm = 1.000đ).</summary>
+    private static int RedeemedPointsFor(Order order) => (int)(order.Discount / LoyaltyRules.DiscountPerPoint);
 
     private static string? NormalizeStatus(string? status) => (status ?? string.Empty).Trim().ToUpperInvariant() switch
     {
@@ -229,20 +272,22 @@ public class OrdersController : ApiControllerBase
         _ => null
     };
 
-    private static object ToResponse(Order o) => new
+    private static OrderResponseDto ToResponse(Order o) => new()
     {
-        o.OrderId,
-        o.OrderCode,
+        OrderId = o.OrderId,
+        OrderCode = o.OrderCode,
         CustomerId = o.CustomerId ?? 0,
         OrderDate = o.CreatedAt,
+        Subtotal = o.Subtotal,
+        Discount = o.Discount,
         TotalAmount = o.Total,
-        o.Status,
-        OrderDetails = o.Items.Select(i => new
+        Status = o.Status,
+        OrderDetails = o.Items.Select(i => new OrderDetailResponseDto
         {
             OrderDetailId = i.OrderItemId,
-            i.ProductId,
-            i.Quantity,
-            i.UnitPrice
-        })
+            ProductId = i.ProductId,
+            Quantity = i.Quantity,
+            UnitPrice = i.UnitPrice
+        }).ToList()
     };
 }

@@ -19,6 +19,32 @@ public class RecentOrderDto
     public string CustomerName { get; set; } = string.Empty;
 }
 
+/// <summary>Bốn chỉ số của Dashboard (tính cho ngày hôm nay).</summary>
+public class DashboardSummaryDto
+{
+    public string Date { get; set; } = string.Empty;
+    public decimal TodayRevenue { get; set; }
+    public int TotalOrders { get; set; }
+    public int NewCustomers { get; set; }
+    public int LowStockProducts { get; set; }
+    public int LowStockThreshold { get; set; }
+}
+
+public class DailyRevenueDto
+{
+    public DateTime Date { get; set; }
+    public int TotalOrders { get; set; }
+    public decimal Revenue { get; set; }
+}
+
+public class TopProductDto
+{
+    public int ProductId { get; set; }
+    public string ProductName { get; set; } = string.Empty;
+    public int TotalQuantity { get; set; }
+    public decimal Revenue { get; set; }
+}
+
 public class ShiftRevenueDto
 {
     public string Cashier { get; set; } = string.Empty;
